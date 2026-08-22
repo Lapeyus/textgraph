@@ -48,6 +48,7 @@ h1{{margin:0;font-size:26px;letter-spacing:-.02em}}
 .intro{{margin:24px 0 36px;max-width:65ch}}
 .intro code{{background:var(--panel);border:1px solid var(--borde);border-radius:5px;
   padding:1px 5px;font-size:13px}}
+a{{color:var(--acento)}}
 h2{{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--tenue);
   margin:0 0 14px}}
 .rejilla{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}}
