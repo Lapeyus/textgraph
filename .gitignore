@@ -1,0 +1,12 @@
+# Archivos AppleDouble del disco exFAT
+._*
+.DS_Store
+__pycache__/
+*.pyc
+
+# Grafos guardados por el usuario (pueden contener textos privados)
+data/*.json
+!data/.gitkeep
+
+# Documentos de entrada y sus salidas (material de terceros)
+entradas/

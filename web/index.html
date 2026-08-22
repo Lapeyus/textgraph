@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>textgraph · del texto al grafo de conocimiento</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="cabecera">
+  <div class="marca">
+    <span class="logo">⁂</span>
+    <div>
+      <h1>textgraph</h1>
+      <p id="subtitulo">del texto al grafo de conocimiento</p>
+    </div>
+  </div>
+  <div id="chips" class="chips"></div>
+  <div class="acciones-cabecera">
+    <button id="btn-panel" class="ghost" title="Mostrar u ocultar el panel de entrada">☰ Entrada</button>
+    <div class="menu">
+      <button id="btn-exportar" class="primario">⤓ Exportar</button>
+      <div id="menu-exportar" class="desplegable"></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ---------------------------------------------------- panel izquierdo -->
+  <aside id="panel-entrada">
+    <div class="seccion">
+      <label class="etiqueta" for="texto">Texto de partida</label>
+      <textarea id="texto" placeholder="Pega aquí el texto que quieres convertir en grafo…"></textarea>
+      <div class="fila">
+        <label class="boton-archivo">
+          <input type="file" id="archivo" accept=".txt,.md,.markdown,.csv,.json,text/*" hidden>
+          📄 Abrir archivo
+        </label>
+        <button id="btn-ejemplo" class="ghost">Cargar ejemplo</button>
+        <span id="contador" class="tenue">0 caracteres</span>
+      </div>
+    </div>
+
+    <div class="seccion">
+      <label class="etiqueta" for="titulo">Título del grafo</label>
+      <input type="text" id="titulo" placeholder="(se deduce del texto)">
+    </div>
+
+    <details class="seccion" id="opciones">
+      <summary>Opciones de extracción</summary>
+      <label class="etiqueta" for="engine">Motor</label>
+      <select id="engine"></select>
+      <p class="ayuda" id="ayuda-motor"></p>
+
+      <label class="etiqueta" for="modelo">Modelo</label>
+      <select id="modelo"></select>
+
+      <label class="etiqueta" for="max_chars">Tamaño de fragmento: <b id="v-frag">3500</b> caracteres</label>
+      <input type="range" id="max_chars" min="1000" max="12000" step="500" value="3500">
+      <p class="ayuda">Fragmentos pequeños = más llamadas, más detalle y más coste.</p>
+
+      <label class="etiqueta" for="paralelo">Fragmentos en paralelo: <b id="v-par">2</b></label>
+      <input type="range" id="paralelo" min="1" max="6" step="1" value="2">
+      <p class="ayuda">Acelera los textos largos; con 1 el modelo conserva mejor
+        la coherencia de nombres entre fragmentos.</p>
+
+      <label class="check"><input type="checkbox" id="exhaustividad" checked>
+        Exhaustividad asistida por el modelo</label>
+      <p class="ayuda">Pide al modelo que conecte las entidades que hayan quedado sueltas.</p>
+
+      <label class="check"><input type="checkbox" id="fusion_llm">
+        Fusión de duplicados asistida por el modelo</label>
+      <p class="ayuda">Consulta los casos dudosos de «¿son la misma entidad?».</p>
+    </details>
+
+    <p id="estimacion" class="ayuda"></p>
+    <button id="btn-construir" class="primario grande">Construir grafo</button>
+    <div id="progreso" class="progreso oculto">
+      <div class="barra"><div id="barra-relleno"></div></div>
+      <p id="progreso-msg" class="tenue"></p>
+    </div>
+
+    <div class="seccion">
+      <label class="etiqueta">Grafos guardados</label>
+      <ul id="proyectos" class="proyectos"></ul>
+    </div>
+  </aside>
+
+  <!-- ------------------------------------------------------- lienzo -->
+  <section id="lienzo">
+    <div id="barra-herramientas">
+      <input type="search" id="buscar" placeholder="Buscar entidad…">
+      <select id="disposicion" title="Disposición">
+        <option value="fuerza">Disposición por fuerzas</option>
+        <option value="jerarquica">Disposición jerárquica</option>
+        <option value="radial">Radial desde el nodo central</option>
+      </select>
+      <select id="color-por" title="Criterio de color">
+        <option value="tipo">Color por tipo</option>
+        <option value="comunidad">Color por comunidad</option>
+      </select>
+      <label class="check compacta"><input type="checkbox" id="ver-etiquetas" checked> Etiquetas de relación</label>
+      <label class="check compacta"><input type="checkbox" id="fisica" checked> Física</label>
+      <button id="btn-ajustar" class="ghost" title="Encajar en pantalla">⛶</button>
+      <button id="btn-filtros" class="ghost">Filtros</button>
+      <button id="btn-edicion" class="ghost" title="Editar el grafo a mano">✎ Editar</button>
+    </div>
+
+    <div id="filtros" class="flotante oculto">
+      <h3>Tipos de entidad</h3>
+      <div id="filtro-tipos" class="lista-filtros"></div>
+      <h3>Tipos de relación</h3>
+      <div id="filtro-relaciones" class="lista-filtros"></div>
+      <h3>Confianza mínima: <b id="v-conf">0.0</b></h3>
+      <input type="range" id="conf-min" min="0" max="1" step="0.05" value="0">
+      <h3>Vecindario</h3>
+      <label class="check compacta"><input type="checkbox" id="solo-vecindario">
+        Mostrar solo el entorno del nodo seleccionado</label>
+      <label class="etiqueta">Profundidad: <b id="v-prof">1</b></label>
+      <input type="range" id="profundidad" min="1" max="4" step="1" value="1">
+      <button id="btn-reset-filtros" class="ghost">Restablecer</button>
+    </div>
+
+    <div id="edicion" class="flotante oculto">
+      <h3>Edición manual</h3>
+      <p class="ayuda">Los cambios se guardan en el proyecto abierto.</p>
+      <button id="btn-add-nodo" class="ghost">＋ Nueva entidad</button>
+      <button id="btn-add-arista" class="ghost">＋ Relación entre los nodos seleccionados</button>
+      <button id="btn-borrar-sel" class="ghost peligro">🗑 Borrar selección</button>
+      <button id="btn-guardar" class="primario">Guardar cambios</button>
+      <p class="ayuda">Consejo: selecciona dos nodos con Ctrl/⌘ + clic para crear una relación.</p>
+    </div>
+
+    <div id="red"></div>
+    <div id="vacio" class="vacio">
+      <h2>Aún no hay ningún grafo</h2>
+      <p>Pega un texto en el panel de la izquierda y pulsa <b>Construir grafo</b>.</p>
+    </div>
+    <div id="leyenda" class="leyenda"></div>
+  </section>
+
+  <!-- -------------------------------------------------- panel derecho -->
+  <aside id="panel-detalle">
+    <nav class="pestanas">
+      <button class="pestana activa" data-tab="detalle">Detalle</button>
+      <button class="pestana" data-tab="texto">Texto</button>
+      <button class="pestana" data-tab="tablas">Listados</button>
+      <button class="pestana" data-tab="informe">Informe</button>
+    </nav>
+    <div class="tab" id="tab-detalle">
+      <p class="tenue">Selecciona un nodo o una relación para ver su detalle y las
+        evidencias textuales que la sostienen.</p>
+    </div>
+    <div class="tab oculto" id="tab-texto"></div>
+    <div class="tab oculto" id="tab-tablas"></div>
+    <div class="tab oculto" id="tab-informe"></div>
+  </aside>
+</main>
+
+<div id="aviso" class="aviso oculto"></div>
+
+<script src="vendor/vis-network.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
