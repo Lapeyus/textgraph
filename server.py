@@ -22,7 +22,10 @@ from urllib.parse import unquote, urlparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from textgraph import exporters, store          # noqa: E402
-from textgraph.llm import MODELO_POR_DEFECTO, PRECIOS, motores_disponibles  # noqa: E402
+from textgraph.llm import (MODELO_POR_DEFECTO, MODELO_POR_DEFECTO_ANTIGRAVITY,  # noqa: E402
+                           MODELO_POR_DEFECTO_CODEX, MODELO_POR_DEFECTO_GEMINI,
+                           MODELOS_ANTIGRAVITY, PRECIOS, PRECIOS_ANTIGRAVITY,
+                           PRECIOS_CODEX, PRECIOS_GEMINI, motores_disponibles)
 from textgraph.model import Edge, Graph, Node    # noqa: E402
 from textgraph.pipeline import construir         # noqa: E402
 
@@ -122,11 +125,23 @@ class Handler(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         try:
             if p == "/api/estado":
+                modelos_claude = sorted(PRECIOS.keys())
+                precios = dict(PRECIOS)
+                precios.update(PRECIOS_CODEX)
+                precios.update(PRECIOS_GEMINI)
+                precios.update(PRECIOS_ANTIGRAVITY)
                 return self._json({
                     "motores": motores_disponibles(),
-                    "modelos": sorted(PRECIOS.keys()),
-                    "modelo_por_defecto": MODELO_POR_DEFECTO,
-                    "precios": PRECIOS,
+                    "modelos": {"claude-cli": modelos_claude, "api": modelos_claude,
+                                "codex-cli": sorted(PRECIOS_CODEX.keys()),
+                                "gemini-cli": sorted(PRECIOS_GEMINI.keys()),
+                                "antigravity-cli": list(MODELOS_ANTIGRAVITY)},
+                    "modelo_por_defecto": {"claude-cli": MODELO_POR_DEFECTO,
+                                           "api": MODELO_POR_DEFECTO,
+                                           "codex-cli": MODELO_POR_DEFECTO_CODEX,
+                                           "gemini-cli": MODELO_POR_DEFECTO_GEMINI,
+                                           "antigravity-cli": MODELO_POR_DEFECTO_ANTIGRAVITY},
+                    "precios": precios,
                     "formatos": [{"id": f[0], "nombre": f[1], "ext": f[3], "uso": f[4]}
                                  for f in exporters.FORMATOS],
                 })

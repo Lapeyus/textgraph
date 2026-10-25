@@ -23,12 +23,16 @@ que la justifica, y el visor permite ir del grafo al texto y del texto al grafo.
 - Python 3.8 o superior (basta el que trae macOS).
 - **Ninguna dependencia externa**: todo funciona con la biblioteca estándar.
   La librería de visualización (vis-network) va incluida en `web/vendor/`.
-- Para la extracción con modelo, una de estas dos cosas:
+- Para la extracción con modelo, alguna de estas cosas:
   - la CLI `claude` instalada y con sesión iniciada (opción por defecto, no
-    necesita clave de API), o
+    necesita clave de API),
+  - la CLI `codex` de OpenAI instalada y con sesión iniciada,
+  - la CLI `gemini` de Google instalada y con sesión iniciada,
+  - la CLI `agy` de Antigravity (Google) instalada y con sesión iniciada
+    (`curl -fsSL https://antigravity.google/cli/install.sh | bash`), o
   - la variable de entorno `ANTHROPIC_API_KEY` con una clave de la API.
 
-Sin ninguna de las dos, la aplicación sigue funcionando con el motor
+Sin ninguna de ellas, la aplicación sigue funcionando con el motor
 heurístico local (sin red, sin coste y con bastante menos precisión).
 
 ## Arranque
@@ -112,6 +116,9 @@ puede enviar por correo o subir a cualquier sitio y funciona sin conexión.
 python3 cli.py texto.txt                       # json + html + paquete LLM
 python3 cli.py texto.txt -f graphml -o salida/
 python3 cli.py texto.txt -m local              # sin modelo, sin coste
+python3 cli.py texto.txt -m codex-cli --modelo gpt-5.6-terra
+python3 cli.py texto.txt -m gemini-cli --modelo gemini-3-flash-preview
+python3 cli.py texto.txt -m antigravity-cli --modelo gemini-3.7-flash-high
 cat texto.txt | python3 cli.py - --modelo claude-sonnet-5
 python3 cli.py --listar-formatos
 ```
@@ -134,8 +141,21 @@ motor local y los doce exportadores. No gasta llamadas al modelo.
 | Motor | Requisito | Coste | Calidad |
 |---|---|---|---|
 | `claude-cli` (por defecto) | CLI `claude` con sesión | se carga a tu cuenta de Claude | alta |
+| `codex-cli` | CLI `codex` con sesión | se carga a tu cuenta de ChatGPT/OpenAI | alta |
+| `gemini-cli` | CLI `gemini` con sesión | se carga a tu cuenta de Google | alta |
+| `antigravity-cli` | CLI `agy` con sesión | cuota del plan de Antigravity (Google) | alta |
 | `api` | `ANTHROPIC_API_KEY` | tarifa de la Messages API | alta |
 | `local` | nada | cero | orientativa |
+
+En `auto` se elige el primero disponible en ese orden: `claude-cli`, `api`,
+`codex-cli`, `gemini-cli`, `antigravity-cli` y, si no hay nada, `local`. Cada
+motor tiene su propia lista de modelos: los Claude para `claude-cli` y `api`,
+la familia GPT de la CLI `codex` (`gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna`) para `codex-cli`, los Gemini (`gemini-3.1-pro-preview`,
+`gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`) para
+`gemini-cli`, y el catálogo de Antigravity (Gemini 3.7/3.6/3.5 Flash y 3.1
+Pro con esfuerzo de razonamiento a elegir, Claude Sonnet/Opus 4.6 y GPT-OSS
+120B) para `antigravity-cli`.
 
 Medición real sobre un texto de 1 626 caracteres (un fragmento):
 
@@ -167,10 +187,38 @@ primer caso. Con suscripción, el recurso escaso es la **cuota**, no el dinero:
 `claude-opus-5` gasta unas cinco veces más cuota que `claude-sonnet-5` por el
 mismo texto, así que para lotes largos conviene Sonnet.
 
+Con el motor `codex-cli` pasa lo mismo: la CLI `codex` no informa de coste,
+así que la aplicación lo calcula a tarifa de la API de OpenAI (contando la
+entrada cacheada al 10 %). Si la sesión es de ChatGPT (`codex login` con la
+cuenta), el uso se descuenta de los límites del plan y no se factura aparte;
+solo es un cargo real si la CLI está autenticada con una clave de API.
+
+Y con `gemini-cli`, ídem a tarifa de la Gemini API. Con sesión de Google
+(OAuth) el uso sale de la cuota del plan de la cuenta; solo es un cargo real
+si la CLI usa una clave (`GEMINI_API_KEY`). Ojo: Google está retirando el
+acceso OAuth «individual» de esta CLI en favor de Antigravity; si la CLI
+devuelve `IneligibleTierError`, toca autenticarla con clave de API o pasarse
+al motor `antigravity-cli`.
+
+El motor `antigravity-cli` nunca factura por token: el consumo sale de la
+cuota del plan de Antigravity de la cuenta de Google. La cifra en dólares es
+el equivalente a la tarifa pública de API del modelo subyacente, para poder
+comparar (GPT-OSS no tiene tarifa pública y se contabiliza a cero).
+
 El motor `claude-cli` lanza la CLI con las herramientas, los ajustes de usuario
 y los servidores MCP desactivados. No es cosmético: sin esa precaución cada
 llamada arrastra decenas de miles de tokens de contexto y cuesta unas 50 veces
-más.
+más. El motor `codex-cli` toma las mismas precauciones: `codex exec` con
+sandbox de solo lectura, sin la configuración del usuario, sin `AGENTS.md` y
+sin dejar sesiones guardadas. Aun así, la CLI `codex` añade por sí sola unos
+12 000 tokens de instrucciones propias en cada llamada (en su mayoría
+cacheados, que se cobran a la décima parte). El motor `gemini-cli` hace lo
+propio: modo `plan` (solo lectura), sin extensiones, y con `GEMINI_SYSTEM_MD`
+apuntando a nuestro prompt de sistema, lo que además sustituye a las
+instrucciones de agente de la CLI y se ahorra esos tokens. Y el motor
+`antigravity-cli` invoca `agy` en modo impresión sin expansión de skills ni
+comandos (los permisos de herramientas se deniegan solos en ese modo); la CLI
+añade unos 13 000 tokens de instrucciones propias por llamada.
 
 ## Cómo funciona por dentro
 

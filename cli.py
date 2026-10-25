@@ -27,7 +27,8 @@ def main():
                     help="formato de exportación (repetible). Por defecto: json html llm")
     ap.add_argument("-t", "--titulo", default="")
     ap.add_argument("-m", "--motor", default="auto",
-                    choices=["auto", "claude-cli", "api", "local"])
+                    choices=["auto", "claude-cli", "codex-cli", "gemini-cli",
+                             "antigravity-cli", "ollama", "api", "local"])
     ap.add_argument("--modelo", default=None)
     ap.add_argument("--fragmento", type=int, default=3500)
     ap.add_argument("--paralelo", type=int, default=2,

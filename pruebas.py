@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from textgraph import analysis, exhaustive, exporters, mentions, normalize  # noqa: E402
 from textgraph.chunker import chunk, find_quote, sentences                  # noqa: E402
-from textgraph.llm import parse_json                                        # noqa: E402
+from textgraph.llm import (MotorAntigravityCLI, MotorCodexCLI,              # noqa: E402
+                           MotorGeminiCLI, parse_json)
 from textgraph.local import MotorLocal                                      # noqa: E402
 from textgraph.model import Edge, Graph, Node                               # noqa: E402
 from textgraph.pipeline import construir                                    # noqa: E402
@@ -49,6 +50,50 @@ def main():
     check("acepta vallado markdown", parse_json('```json\n{"a":1}\n```') == {"a": 1})
     check("tolera comas finales", parse_json('{"a":[1,2],}') == {"a": [1, 2]})
     check("ignora texto sobrante", parse_json('claro: {"b":"}"} listo') == {"b": "}"})
+
+    print("parseo de eventos de la CLI codex")
+    jl = ('{"type":"thread.started","thread_id":"x"}\n'
+          'Reading prompt from stdin...\n'
+          '{"type":"item.completed","item":{"id":"i0","type":"agent_message",'
+          '"text":"{\\"ok\\":true}"}}\n'
+          '{"type":"turn.completed","usage":{"input_tokens":12835,'
+          '"cached_input_tokens":9984,"output_tokens":9}}')
+    t, u, err = MotorCodexCLI._leer_eventos(jl)
+    check("extrae el mensaje del agente", t == '{"ok":true}', t)
+    check("extrae el uso de tokens",
+          u.get("input_tokens") == 12835 and u.get("output_tokens") == 9, u)
+    check("tolera líneas que no son JSON", err is None, err)
+    t2, _, err2 = MotorCodexCLI._leer_eventos(
+        '{"type":"turn.failed","error":{"message":"sin cupo"}}')
+    check("recoge el error del turno", err2 == "sin cupo" and t2 == "", err2)
+
+    print("parseo de la respuesta de la CLI gemini")
+    env = ('{"session_id":"x","response":"{\\"ok\\":true}","stats":{"models":'
+           '{"gemini-3-pro-preview":{"tokens":{"prompt":1200,"candidates":300,'
+           '"thoughts":150,"cached":400,"total":1650,"tool":0}}}}}')
+    t3, st3, err3 = MotorGeminiCLI._leer_respuesta("aviso previo\n" + env)
+    tk = st3["models"]["gemini-3-pro-preview"]["tokens"]
+    check("extrae la respuesta pese al ruido previo", t3 == '{"ok":true}', t3)
+    check("extrae los tokens del modelo",
+          tk["prompt"] == 1200 and tk["candidates"] == 300, st3)
+    check("sin error en la respuesta buena", err3 is None, err3)
+    t4, _, err4 = MotorGeminiCLI._leer_respuesta(
+        '{"error":{"type":"AuthError","message":"sin sesión","code":41}}')
+    check("recoge el error del sobre JSON", err4 == "sin sesión" and t4 == "", err4)
+
+    print("parseo de la respuesta de la CLI antigravity")
+    env2 = ('{"conversation_id":"c1","status":"SUCCESS","response":"{\\"ok\\":3}\\n",'
+            '"num_turns":1,"usage":{"input_tokens":13735,"output_tokens":63,'
+            '"thinking_tokens":58,"cache_read_tokens":0,"total_tokens":13798}}')
+    t5, u5, err5 = MotorAntigravityCLI._leer_respuesta(env2)
+    check("extrae la respuesta", t5.strip() == '{"ok":3}', t5)
+    check("extrae el uso de tokens",
+          u5.get("input_tokens") == 13735 and u5.get("output_tokens") == 63, u5)
+    check("sin error si el estado es SUCCESS", err5 is None, err5)
+    t6, _, err6 = MotorAntigravityCLI._leer_respuesta(
+        '{"conversation_id":"","status":"ERROR","response":"",'
+        '"error":"modelo desconocido"}')
+    check("recoge el error del estado", err6 == "modelo desconocido" and t6 == "", err6)
 
     print("resolución de entidades")
     g = Graph()

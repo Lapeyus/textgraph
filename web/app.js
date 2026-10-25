@@ -72,21 +72,36 @@ function pintarMotores(d) {
   var sel = $("#engine"), opciones = [];
   if (d.motores["claude-cli"]) opciones.push(["claude-cli", "Claude (CLI local)"]);
   if (d.motores.api) opciones.push(["api", "Claude (API con clave)"]);
+  if (d.motores["codex-cli"]) opciones.push(["codex-cli", "Codex (CLI local)"]);
+  if (d.motores["gemini-cli"]) opciones.push(["gemini-cli", "Gemini (CLI local)"]);
+  if (d.motores["antigravity-cli"]) opciones.push(["antigravity-cli", "Antigravity (CLI local)"]);
   opciones.push(["local", "Heurístico sin modelo (offline)"]);
   sel.innerHTML = opciones.map(function (o) {
     return '<option value="' + o[0] + '">' + esc(o[1]) + "</option>";
   }).join("");
-  var m = $("#modelo");
-  m.innerHTML = d.modelos.map(function (x) {
-    return '<option value="' + esc(x) + '"' +
-      (x === d.modelo_por_defecto ? " selected" : "") + ">" + esc(x) + "</option>";
-  }).join("");
+  E.modelos = d.modelos || {};
+  E.defectos = d.modelo_por_defecto || {};
+  pintarModelos();
   actualizarAyudaMotor();
+}
+
+/* Cada motor tiene su propia lista de modelos (Claude o GPT). */
+function pintarModelos() {
+  var motor = $("#engine").value;
+  var lista = (E.modelos || {})[motor] || [];
+  if (!lista.length) return;                 // motor local: se conserva la lista
+  $("#modelo").innerHTML = lista.map(function (x) {
+    return '<option value="' + esc(x) + '"' +
+      (x === (E.defectos || {})[motor] ? " selected" : "") + ">" + esc(x) + "</option>";
+  }).join("");
 }
 
 function actualizarAyudaMotor() {
   var v = $("#engine").value, t = {
     "claude-cli": "Usa la CLI `claude` ya instalada y autenticada. No necesita clave de API; el coste se carga a tu cuenta de Claude.",
+    "codex-cli": "Usa la CLI `codex` (OpenAI) ya instalada y autenticada. No necesita clave de API; el consumo se carga a tu cuenta de ChatGPT u OpenAI.",
+    "gemini-cli": "Usa la CLI `gemini` (Google) ya instalada y autenticada. No necesita clave de API; el consumo se carga a tu cuenta de Google.",
+    "antigravity-cli": "Usa la CLI `agy` de Antigravity (Google) ya instalada y autenticada. Da acceso a modelos Gemini, Claude y GPT-OSS; el consumo sale de la cuota de tu plan de Antigravity.",
     api: "Usa la Messages API con la variable ANTHROPIC_API_KEY.",
     local: "Reglas lingüísticas locales: sin coste ni red, pero mucha menos precisión. Útil para comparar."
   }[v] || "";
@@ -182,19 +197,29 @@ function estimar() {
   }
   var precio = (E.precios || {})[$("#modelo").value];
   // El razonamiento del modelo domina la salida y varía mucho según la
-  // familia; estas constantes salen de extracciones medidas.
-  var m = $("#modelo").value;
+  // familia; estas constantes salen de extracciones medidas. Cada CLI añade
+  // además sus propias instrucciones por llamada: `codex` ~12k tokens (en su
+  // mayoría cacheados al 10 %, ~4000 efectivos) y `agy` ~13k sin cachear.
+  var m = $("#modelo").value, motor = $("#engine").value;
   var razonamiento = /opus|fable|mythos/.test(m) ? 6000 :
-                     /haiku/.test(m) ? 1200 : 1800;
-  var tin = (chars / 3.6) + llamadas * 900;
+                     /haiku/.test(m) ? 1200 :
+                     /^gpt-/.test(m) ? 800 : 1800;
+  var porLlamada = motor === "codex-cli" ? 4000 :
+                   motor === "antigravity-cli" ? 13000 : 900;
+  var tin = (chars / 3.6) + llamadas * porLlamada;
   var tout = llamadas * razonamiento + 15 * (chars / 3.6);
   var txt = frag + " fragmento(s) · ~" + Math.round(llamadas) + " llamada(s) al modelo";
   if (precio) {
     var usd = (tin / 1e6) * precio[0] + (tout / 1e6) * precio[1];
     var rango = "$" + (usd * 0.6).toFixed(2) + "–$" + (usd * 1.8).toFixed(2);
-    txt += $("#engine").value === "claude-cli"
-      ? " · consumo equivalente a " + rango + " de API; con sesión de suscripción " +
-        "se descuenta de los límites del plan, no se factura aparte"
+    var cuenta = {
+      "claude-cli": "con sesión de suscripción se descuenta de los límites del plan",
+      "codex-cli": "con sesión de ChatGPT se descuenta de los límites del plan",
+      "gemini-cli": "con sesión de Google se descuenta de la cuota del plan",
+      "antigravity-cli": "se descuenta de la cuota de tu plan de Antigravity"
+    }[motor];
+    txt += cuenta
+      ? " · consumo equivalente a " + rango + " de API; " + cuenta + ", no se factura aparte"
       : " · coste orientativo " + rango;
   }
   el.textContent = txt;
@@ -252,19 +277,31 @@ function aristaVis(e, i) {
   };
 }
 
+/* Constantes de la física según el nivel de separación (0 = disposición
+   compacta normal): a más nivel, más repulsión entre nodos, muelles más
+   largos y menos gravedad hacia el centro, así el grafo se expande sin
+   perder ninguna conexión. */
+function fisicaBarnesHut(nivel) {
+  return { gravitationalConstant: -5200 * Math.pow(1.6, nivel),
+           centralGravity: 0.42 / Math.pow(1.5, nivel),
+           springLength: 115 * Math.pow(1.3, nivel),
+           springConstant: 0.035, damping: 0.4,
+           avoidOverlap: Math.min(1, 0.28 + 0.2 * nivel) };
+}
+
 function pintarRed() {
   var g = E.grafo;
   E.dsNodos = new vis.DataSet(g.nodes.map(nodoVis));
   E.dsAristas = new vis.DataSet(g.edges.map(aristaVis));
+  E.separacion = 0;
+  actualizarBotonSeparar();
   var opciones = {
     nodes: { shape: "dot", scaling: { min: 8, max: 40 }, shadow: false },
     edges: { selectionWidth: 2.5, hoverWidth: 0.6 },
     physics: {
       enabled: $("#fisica").checked,
       solver: "barnesHut",
-      barnesHut: { gravitationalConstant: -5200, centralGravity: 0.42,
-                   springLength: 115, springConstant: 0.035, damping: 0.4,
-                   avoidOverlap: 0.28 },
+      barnesHut: fisicaBarnesHut(0),
       stabilization: { iterations: 260, updateInterval: 30 }
     },
     interaction: { hover: true, multiselect: true, tooltipDelay: 220,
@@ -291,6 +328,44 @@ function pintarRed() {
   }, 1900);
   aplicarEtiquetas();
   aplicarFiltros();
+}
+
+/* Separa los nodos amontonados: sube la repulsión de la física y da un
+   empujón radial inmediato desde el centro (visible incluso con la física
+   apagada). Cada clic separa más; pasado el nivel máximo, el siguiente clic
+   vuelve a la disposición compacta. Las conexiones no se tocan. */
+function separar() {
+  if (!E.red) return;
+  var previo = E.separacion || 0;
+  E.separacion = previo >= 4 ? 0 : previo + 1;
+  // factor del empujón radial; al reiniciar deshace la expansión acumulada
+  var factor = E.separacion ? 1.35 : Math.pow(1.35, -previo);
+  var pos = E.red.getPositions(), ids = Object.keys(pos);
+  var cx = 0, cy = 0;
+  ids.forEach(function (id) { cx += pos[id].x; cy += pos[id].y; });
+  cx /= ids.length || 1; cy /= ids.length || 1;
+  ids.forEach(function (id) {
+    E.red.moveNode(id, cx + (pos[id].x - cx) * factor,
+                   cy + (pos[id].y - cy) * factor);
+  });
+  E.red.setOptions({ physics: { barnesHut: fisicaBarnesHut(E.separacion) } });
+  if ($("#fisica").checked) {
+    E.red.startSimulation();
+    E.red.once("stabilized", function () { encajar(true); });
+  }
+  actualizarBotonSeparar();
+  // encaje de cortesía mientras la física sigue moviendo los nodos
+  clearTimeout(separar._t);
+  separar._t = setTimeout(function () { encajar(true); }, 700);
+}
+
+function actualizarBotonSeparar() {
+  var b = $("#btn-separar");
+  if (!b) return;
+  b.textContent = E.separacion ? "✥ Separar ×" + E.separacion : "✥ Separar";
+  b.title = E.separacion >= 4
+    ? "Nivel máximo: otro clic vuelve a la disposición compacta"
+    : "Aleja los nodos entre sí para deshacer amontonamientos (cada clic separa más)";
 }
 
 /* Encaja el grafo en pantalla. Solo se limita el acercamiento máximo: en
@@ -730,7 +805,7 @@ function enlazarEventos() {
       }).catch(function () { aviso("No se encontró el ejemplo.", true); });
     };
     $("#btn-construir").onclick = construir;
-    $("#engine").onchange = function () { actualizarAyudaMotor(); estimar(); };
+    $("#engine").onchange = function () { pintarModelos(); actualizarAyudaMotor(); estimar(); };
     $("#max_chars").oninput = function () {
       $("#v-frag").textContent = this.value; estimar();
     };
@@ -770,6 +845,7 @@ function enlazarEventos() {
     $("#filtros").classList.add("oculto");
   };
   $("#btn-ajustar").onclick = function () { encajar(true); };
+  $("#btn-separar").onclick = separar;
   $("#ver-etiquetas").onchange = aplicarEtiquetas;
   $("#fisica").onchange = function () {
     if (E.red) E.red.setOptions({ physics: { enabled: this.checked } });
